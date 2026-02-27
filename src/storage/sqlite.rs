@@ -5059,6 +5059,24 @@ impl SqliteStorage {
     /// # Errors
     ///
     /// Returns an error if a database query fails.
+    /// Returns IDs of direct children (parent-child deps) that are still open/in-progress.
+    pub fn get_open_child_ids(&self, parent_id: &str) -> Result<Vec<String>> {
+        let rows = self.conn.query_with_params(
+            "SELECT d.issue_id FROM dependencies d \
+             JOIN issues i ON i.id = d.issue_id \
+             WHERE d.depends_on_id = ? AND d.type = 'parent-child' \
+             AND i.status IN ('open', 'in_progress')",
+            &[SqliteValue::from(parent_id)],
+        )?;
+        let mut result = Vec::new();
+        for row in &rows {
+            if let Some(id) = row.get(0).and_then(SqliteValue::as_text) {
+                result.push(id.to_string());
+            }
+        }
+        Ok(result)
+    }
+
     fn collect_descendant_ids(&self, parent_id: &str) -> Result<Vec<String>> {
         let mut result = Vec::new();
         // Use a HashSet for O(1) visited-set lookups instead of the

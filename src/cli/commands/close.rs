@@ -607,6 +607,25 @@ fn execute_route(
             continue;
         }
 
+        // Dot-notation child guard (fork-specific; supplements upstream's
+        // epic_counts check, which only sees formally declared parent-child deps).
+        if !args.force {
+            let open_children = storage_ctx.storage.get_open_child_ids(id)?;
+            if !open_children.is_empty() {
+                let reason = format!(
+                    "has {} open child issue(s): {}",
+                    open_children.len(),
+                    open_children.join(", ")
+                );
+                tracing::info!(id = %id, %reason, "Skipping close — open children");
+                skipped_issues.push(SkippedIssue {
+                    id: id.clone(),
+                    reason,
+                });
+                continue;
+            }
+        }
+
         let now = Utc::now();
         let close_reason = args.reason.clone().unwrap_or_else(|| "done".to_string());
         let update = IssueUpdate {
