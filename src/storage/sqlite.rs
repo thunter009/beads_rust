@@ -5059,14 +5059,25 @@ impl SqliteStorage {
     /// # Errors
     ///
     /// Returns an error if a database query fails.
-    /// Returns IDs of direct children (parent-child deps) that are still open/in-progress.
+    /// Returns IDs of direct children that are still open/in-progress.
+    ///
+    /// Checks both explicit parent-child dependencies AND dot-notation
+    /// convention (e.g. `epic.1`, `epic.2` are children of `epic`).
     pub fn get_open_child_ids(&self, parent_id: &str) -> Result<Vec<String>> {
+        let prefix = format!("{}.", parent_id);
         let rows = self.conn.query_with_params(
-            "SELECT d.issue_id FROM dependencies d \
-             JOIN issues i ON i.id = d.issue_id \
-             WHERE d.depends_on_id = ? AND d.type = 'parent-child' \
-             AND i.status IN ('open', 'in_progress')",
-            &[SqliteValue::from(parent_id)],
+            "SELECT i.id FROM issues i \
+             WHERE i.status IN ('open', 'in_progress') \
+             AND (i.id IN ( \
+                 SELECT d.issue_id FROM dependencies d \
+                 WHERE d.depends_on_id = ? AND d.type = 'parent-child' \
+             ) OR (i.id LIKE ? AND i.id NOT LIKE ?))",
+            &[
+                SqliteValue::from(parent_id),
+                SqliteValue::from(format!("{prefix}%").as_str()),
+                // Exclude grandchildren (e.g. epic.1.1)
+                SqliteValue::from(format!("{prefix}%.%").as_str()),
+            ],
         )?;
         let mut result = Vec::new();
         for row in &rows {
