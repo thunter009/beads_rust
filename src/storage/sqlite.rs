@@ -1518,7 +1518,7 @@ impl SqliteStorage {
                 let blockers_json =
                     serde_json::to_string(&blockers).unwrap_or_else(|_| "[]".to_string());
                 conn.execute_with_params(
-                    "INSERT INTO blocked_issues_cache (issue_id, blocked_by) VALUES (?, ?)",
+                    "INSERT OR IGNORE INTO blocked_issues_cache (issue_id, blocked_by) VALUES (?, ?)",
                     &[
                         SqliteValue::from(issue_id),
                         SqliteValue::from(blockers_json),
@@ -1576,7 +1576,7 @@ impl SqliteStorage {
                     serde_json::to_string(&blockers).unwrap_or_else(|_| "[]".to_string());
 
                 conn.execute_with_params(
-                    "INSERT INTO blocked_issues_cache (issue_id, blocked_by) VALUES (?, ?)",
+                    "INSERT OR IGNORE INTO blocked_issues_cache (issue_id, blocked_by) VALUES (?, ?)",
                     &[
                         SqliteValue::from(issue_id),
                         SqliteValue::from(blockers_json),
@@ -4108,10 +4108,10 @@ impl SqliteStorage {
                 SqliteValue::from(issue.id.as_str()),
                 issue.content_hash.as_deref().map_or(SqliteValue::Null, SqliteValue::from),
                 SqliteValue::from(issue.title.as_str()),
-                issue.description.as_deref().map_or(SqliteValue::Null, SqliteValue::from),
-                issue.design.as_deref().map_or(SqliteValue::Null, SqliteValue::from),
-                issue.acceptance_criteria.as_deref().map_or(SqliteValue::Null, SqliteValue::from),
-                issue.notes.as_deref().map_or(SqliteValue::Null, SqliteValue::from),
+                SqliteValue::from(issue.description.as_deref().unwrap_or("")),
+                SqliteValue::from(issue.design.as_deref().unwrap_or("")),
+                SqliteValue::from(issue.acceptance_criteria.as_deref().unwrap_or("")),
+                SqliteValue::from(issue.notes.as_deref().unwrap_or("")),
                 SqliteValue::from(status_str),
                 SqliteValue::from(i64::from(issue.priority.0)),
                 SqliteValue::from(issue_type_str),
