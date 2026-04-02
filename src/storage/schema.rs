@@ -257,12 +257,10 @@ fn table_exists(conn: &Connection, table: &str) -> bool {
 }
 
 fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
-    // Use parameterized query for the column name to prevent SQL injection.
-    // Note: pragma_table_info() requires the table name directly (can't be parameterized),
-    // but we validate it's a known table name before calling this function.
-    let sql = format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?");
-    conn.query_with_params(&sql, &[SqliteValue::from(column)])
-        .is_ok_and(|rows| !rows.is_empty())
+    // Probe the column directly instead of using pragma_table_info, which
+    // returns incorrect results in fsqlite for freshly-created tables.
+    let sql = format!("SELECT \"{column}\" FROM \"{table}\" LIMIT 0");
+    conn.query(&sql).is_ok()
 }
 
 const ISSUE_COLUMNS: &[(&str, &str)] = &[
@@ -416,11 +414,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
     }
 
     // Migration: ensure source_repo column exists (bd compatibility)
-    let has_source_repo: bool = conn
-        .query("SELECT 1 FROM pragma_table_info('issues') WHERE name='source_repo'")
-        .is_ok_and(|rows| !rows.is_empty());
-
-    if !has_source_repo {
+    if !column_exists(conn, "issues", "source_repo") {
         conn.execute("ALTER TABLE issues ADD COLUMN source_repo TEXT NOT NULL DEFAULT '.'")?;
     }
 
