@@ -5065,14 +5065,23 @@ impl SqliteStorage {
     /// convention (e.g. `epic.1`, `epic.2` are children of `epic`).
     pub fn get_open_child_ids(&self, parent_id: &str) -> Result<Vec<String>> {
         let prefix = format!("{}.", parent_id);
+        // Defensive `i.id != ?` guard: if the dependencies table holds a
+        // self-referential parent-child row (issue_id == depends_on_id ==
+        // parent_id) — possible from migrations, hand-edited JSONL, or
+        // upstream bugs — the issue would otherwise list itself as its own
+        // open child and block close. The dot-notation branch below already
+        // can't match the parent's own id (no trailing dot), but applying
+        // the filter once at the top covers both branches uniformly.
         let rows = self.conn.query_with_params(
             "SELECT i.id FROM issues i \
              WHERE i.status IN ('open', 'in_progress') \
+             AND i.id != ? \
              AND (i.id IN ( \
                  SELECT d.issue_id FROM dependencies d \
                  WHERE d.depends_on_id = ? AND d.type = 'parent-child' \
              ) OR (i.id LIKE ? AND i.id NOT LIKE ?))",
             &[
+                SqliteValue::from(parent_id),
                 SqliteValue::from(parent_id),
                 SqliteValue::from(format!("{prefix}%").as_str()),
                 // Exclude grandchildren (e.g. epic.1.1)
@@ -7956,6 +7965,41 @@ mod tests {
 
         assert!(storage.has_external_dependencies(true).unwrap());
         assert!(storage.has_external_dependencies(false).unwrap());
+    }
+
+    #[test]
+    fn test_get_open_child_ids_excludes_self_referential_parent_child_row() {
+        // Reproducer: a stale or hand-edited dependencies row where
+        // issue_id == depends_on_id (self-referential parent-child) caused
+        // get_open_child_ids to list the issue as its own child, blocking
+        // close. add_dependency rejects self-refs, so we insert raw with
+        // FK off to simulate the bad-data condition.
+        let mut storage = SqliteStorage::open_memory().unwrap();
+        let t1 = Utc.with_ymd_and_hms(2025, 4, 27, 0, 0, 0).unwrap();
+        let issue = make_issue("bd-self1", "Self", Status::Open, 2, None, t1, None);
+        storage.create_issue(&issue, "tester").unwrap();
+
+        storage.conn.execute("PRAGMA foreign_keys = OFF").unwrap();
+        storage
+            .conn
+            .execute_with_params(
+                "INSERT INTO dependencies (issue_id, depends_on_id, type, created_at, created_by)
+                 VALUES (?, ?, 'parent-child', ?, ?)",
+                &[
+                    SqliteValue::from("bd-self1"),
+                    SqliteValue::from("bd-self1"),
+                    SqliteValue::from(t1.to_rfc3339()),
+                    SqliteValue::from("tester"),
+                ],
+            )
+            .unwrap();
+        storage.conn.execute("PRAGMA foreign_keys = ON").unwrap();
+
+        let children = storage.get_open_child_ids("bd-self1").unwrap();
+        assert!(
+            children.is_empty(),
+            "expected no children, got {children:?} (issue listed itself as its own child)"
+        );
     }
 
     #[test]
