@@ -4,6 +4,40 @@ Audit performed 2026-04-28 against `origin/main` at `7865fae`. Snapshot of the
 59 commits this fork holds ahead of upstream main, classified by whether each
 fix corresponds to a bug that still exists upstream.
 
+> **2026-08-05 — the fork's code is retired. This branch is now upstream plus
+> this document, nothing else.**
+>
+> - **The open-child guard was superseded upstream.** `6753c34e`
+>   ("fix(close): guard against silently orphaning dot-notation children on
+>   parent close") landed in **v0.2.0**, 2026-04-22 — six days before this audit
+>   was written, which is why the audit still lists `92831ed`/`995daee` as
+>   fork-specific. Upstream's version is strictly broader: it partitions
+>   requested vs unrequested children and previews the first five. Verified
+>   against real data on v0.2.19 — closing a parent with open children is
+>   refused (`epic has 12/54 open children (use --force to close anyway)`) and
+>   the parent stays open. Both fork commits were dropped in the rebase that
+>   produced this revision.
+> - **Do not run v0.2.20.** It makes a workspace unusable after the first
+>   command: `br init` succeeds, then every later command fails with
+>   `Database error: database is busy` — on a freshly-created v17 DB, single
+>   process, no JSONL. Reproduced from a source build, so it is not a bad
+>   release artifact. Cause is the `inspect_pending_sync_merge_under_authority`
+>   gate from `251b501b`, which `git tag --contains` places in **v0.2.20 only**.
+>   Filed upstream as **#412**.
+> - The same gate masks `SchemaMismatch` as "busy" for pre-v17 databases, so
+>   `main.rs`'s `reviewed_schema_migration_required` route is unreachable and
+>   such a DB cannot be opened, migrated, or repaired (`br doctor --repair`
+>   refuses through the same gate). Also in #412.
+> - **Pinned to v0.2.19.** Its `CURRENT_SCHEMA_VERSION` is 16, which is what our
+>   databases already are, so it opens them with no migration. Note upstream
+>   #411: the v0.2.19 release checksum does not verify against the documented
+>   Minisign key — build from the tag rather than downloading the artifact.
+>
+> The candidate tables below were written against `7865fae` and were **not**
+> re-verified against current upstream. Treat every row as unconfirmed until
+> re-checked — as the open-child entry shows, upstream may have fixed a bug in
+> unrelated work since.
+
 ## Status at audit time
 
 - Upstream issues filed from this audit:
@@ -90,7 +124,7 @@ future audit doesn't reclassify them.
 
 | sha | reason fork-specific |
 |---|---|
-| 92831ed, 995daee | open-child guard (PR #260 closed without merge) |
+| 92831ed, 995daee | ~~open-child guard (PR #260 closed without merge)~~ — **misclassified; superseded upstream by `6753c34e` in v0.2.0. Both commits dropped 2026-08-05.** PR #260 was indeed closed unmerged, but upstream implemented an equivalent (broader) guard independently. |
 | 5c95dd3 | self-reference fix on the open-child guard |
 | 33a06bab, dcf3756, 3546f15, f9660535, 760d393, 4035f9b8 | fsqlite-specific workarounds; canonical fix lives in frankensqlite |
 | c9fd02a | `src/id_resolver.rs` doesn't exist in upstream |
