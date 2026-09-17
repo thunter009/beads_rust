@@ -203,6 +203,11 @@ pub fn execute(
 *.db-wal
 # fsqlite multi-process namespace sidecars (-fsqlite-ns-gate / -fsqlite-ns-use)
 *.db-fsqlite-*
+# `br doctor migrate-schema apply` vacuum sidecars, named
+# `.beads.db.schema-migration-<run>.vacuum-*`. Here `.db` is followed by
+# `.schema-migration`, so both globs above miss them and a blind
+# `git add .beads/` commits four files per migration.
+*.db.schema-migration-*
 
 # Lock files
 .write.lock
@@ -463,6 +468,25 @@ mod tests {
         assert!(temp_dir.path().join(".beads/.gitignore").exists());
         assert!(temp_dir.path().join(".beads/issues.jsonl").exists());
         info!("test_init_creates_beads_directory: assertions passed");
+    }
+
+    #[test]
+    fn test_gitignore_covers_migrate_schema_vacuum_sidecars() {
+        init_logging();
+        let temp_dir = TempDir::new().unwrap();
+        let ctx = OutputContext::from_flags(false, false, true);
+        execute(None, false, Some(temp_dir.path()), &ctx).unwrap();
+
+        let gitignore = fs::read_to_string(temp_dir.path().join(".beads/.gitignore")).unwrap();
+
+        // `br doctor migrate-schema apply` writes four of these per run, e.g.
+        // `.beads.db.schema-migration-20260917T014057Z-90846-0.vacuum-fsqlite-ns-gate`.
+        // `.db` is followed by `.schema-migration`, so `*.db-wal` and
+        // `*.db-fsqlite-*` both miss them.
+        assert!(
+            gitignore.contains("*.db.schema-migration-*"),
+            "generated .gitignore must ignore migrate-schema vacuum sidecars, got:\n{gitignore}"
+        );
     }
 
     #[cfg(unix)]
